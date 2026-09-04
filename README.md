@@ -6,6 +6,9 @@ P/E) per holding; and detection of redundant or overlapping positions
 (e.g. holding an S&P 500 ETF alongside the individual mega-caps it already
 contains, or several stocks clustered in the same industry).
 
+This app also includes a [**College Football Outlook**](#college-football-outlook)
+page at `/cfb` with a weekly summary of upcoming FBS matchups.
+
 ## Getting started
 
 ```bash
@@ -78,3 +81,31 @@ Modeling Prep, Alpha Vantage) in the route handler.
   ETF's largest constituents (`topHoldings` in
   `lib/fallbackFundamentals.ts`), not a live holdings feed — treat it as
   directional, not exhaustive.
+
+## College Football Outlook
+
+Open [http://localhost:3000/cfb](http://localhost:3000/cfb) (or use the nav
+bar) for a weekly summary of the upcoming FBS slate: kickoff times, AP/CFP
+rankings, records, spreads, over/unders, and moneylines, plus a "games worth
+watching" panel.
+
+- **Live data**: `app/api/cfb/route.ts` fetches the current week's scoreboard
+  and odds from ESPN's public API. If that's unreachable — no network access,
+  or ESPN changes/rate-limits the endpoint — it falls back to a small,
+  clearly-labeled sample slate in `lib/cfb/sampleWeek.ts` so the UI still
+  works. Responses are cached for 5 minutes.
+- **"Games worth watching"**: `lib/cfb/analysis.ts` computes a simple,
+  transparent power rating from each team's rank and win/loss record, then
+  compares the gap between the two teams to the posted spread. Games where
+  that gap is unusually large are flagged as a possible market mismatch
+  (favorite or underdog), and any game between two ranked teams is flagged as
+  a marquee matchup. **This is a talking-point heuristic, not a predictive
+  model or betting advice** — it doesn't know about injuries, weather, line
+  movement, or anything not already public in the rank/record/spread.
+- **Responsible use**: the page includes a persistent disclaimer. Sports
+  betting is illegal in some jurisdictions and age-restricted where legal —
+  check local laws. If you or someone you know needs help, the National
+  Problem Gambling Helpline (1-800-GAMBLER) is free and confidential.
+- To use a real odds provider (e.g. The Odds API) instead of/alongside ESPN,
+  extend `app/api/cfb/route.ts` — the `WeeklySlate`/`CfbGame` shapes in
+  `lib/cfb/types.ts` are provider-agnostic.
