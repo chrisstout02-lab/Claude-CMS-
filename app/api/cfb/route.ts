@@ -105,9 +105,14 @@ function toGame(event: EspnEvent): CfbGame | null {
   };
 }
 
-async function fetchLiveSlate(week: string | null, year: string | null, seasontype: string | null): Promise<WeeklySlate | null> {
+interface LiveFetchResult {
+  slate: WeeklySlate | null;
+  error: string | null;
+}
+
+async function fetchLiveSlate(week: string | null, year: string | null, seasontype: string | null): Promise<LiveFetchResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     const params = new URLSearchParams({ groups: "80", limit: "150" });
     if (week) params.set("week", week);
@@ -117,25 +122,40 @@ async function fetchLiveSlate(week: string | null, year: string | null, seasonty
     const url = `https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?${params.toString()}`;
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; CfbGamblingApp/1.0)" },
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        Accept: "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        Referer: "https://www.espn.com/college-football/scoreboard",
+      },
+      cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return { slate: null, error: `ESPN responded with HTTP ${res.status}` };
+    }
     const json = await res.json();
 
     const events: EspnEvent[] = json?.events ?? [];
     const games = events.map(toGame).filter((g): g is CfbGame => g !== null);
-    if (games.length === 0) return null;
+    if (games.length === 0) {
+      return { slate: null, error: "ESPN returned no games for this week (likely off-season, or the response shape changed)" };
+    }
 
     return {
-      week: json?.week?.number ?? (week ? parseInt(week, 10) : 0),
-      seasonYear: json?.season?.year ?? (year ? parseInt(year, 10) : new Date().getFullYear()),
-      seasonType: json?.season?.type ?? (seasontype ? parseInt(seasontype, 10) : 2),
-      games,
-      source: "live",
-      asOf: new Date().toISOString(),
+      slate: {
+        week: json?.week?.number ?? (week ? parseInt(week, 10) : 0),
+        seasonYear: json?.season?.year ?? (year ? parseInt(year, 10) : new Date().getFullYear()),
+        seasonType: json?.season?.type ?? (seasontype ? parseInt(seasontype, 10) : 2),
+        games,
+        source: "live",
+        asOf: new Date().toISOString(),
+      },
+      error: null,
     };
-  } catch {
-    return null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { slate: null, error: controller.signal.aborted ? "Request to ESPN timed out" : message };
   } finally {
     clearTimeout(timeout);
   }
@@ -152,9 +172,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ slate: cached.data });
   }
 
-  const live = await fetchLiveSlate(week, year, seasontype);
+  const { slate: live, error } = await fetchLiveSlate(week, year, seasontype);
   const slate = live ?? getSampleSlate(week ? parseInt(week, 10) : 2, year ? parseInt(year, 10) : new Date().getFullYear());
 
   cache.set(cacheKey, { data: slate, expiresAt: Date.now() + CACHE_TTL_MS });
-  return NextResponse.json({ slate });
+  // liveFetchError is only present when the sample fallback was used, to make diagnosing
+  // production issues possible without needing access to server logs.
+  return NextResponse.json({ slate, liveFetchError: live ? null : error });
 }
