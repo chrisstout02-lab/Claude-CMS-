@@ -19,9 +19,12 @@ export function useWeeklySlate() {
       if (weekParam !== null) params.set("week", String(weekParam));
       const res = await fetch(`/api/cfb?${params.toString()}`);
       if (!res.ok) throw new Error(`Request failed with ${res.status}`);
-      const json: { slate: WeeklySlate } = await res.json();
+      const json: { slate: WeeklySlate; liveFetchError: string | null } = await res.json();
       setSlate(json.slate);
       setWeek(json.slate.week);
+      if (json.liveFetchError) {
+        setError(`Couldn't reach the live scoreboard (${json.liveFetchError}) — showing sample data instead.`);
+      }
     } catch {
       setError("Couldn't reach the live scoreboard — showing sample data instead.");
     } finally {
